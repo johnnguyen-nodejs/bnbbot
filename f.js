@@ -160,6 +160,7 @@ const cancelMarginOrder = async (orderId) => {
             orderId,
             isIsolated: true
         })
+        console.log(order)
         if(!order?.orderId) return 'no'
         await client.marginCancelOrder({
             symbol,
