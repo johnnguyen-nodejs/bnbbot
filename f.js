@@ -215,7 +215,17 @@ const sellFunc = async () => {
         const { base, quote } = await getBorrowBalance()
         const { bid, ask } = await getOrderBookPrice()
         if(Number(quote)/(Number(base)*Number(ask)) <= 0.3) {
-            await redis.set('error', 0)
+            try {
+                const orders = await client.marginOpenOrders({
+                    symbol,
+                    isIsolated: true
+                })
+                for(let order of orders) {
+                    await cancelMarginOrder(order.orderId)
+                }
+            } catch (error) {
+                throw new Error
+            }
             await client.marginOrder({
                 symbol,
                 isIsolated: true,
