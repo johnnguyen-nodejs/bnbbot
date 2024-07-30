@@ -160,7 +160,7 @@ const cancelMarginOrder = async (orderId) => {
             orderId,
             isIsolated: true
         })
-        if(!order?.orderId) return
+        if(!order?.orderId) return 'no'
         await client.marginCancelOrder({
             symbol,
             orderId,
@@ -180,13 +180,9 @@ const updateBatchIsolatedOrder = async () => {
         })
         if(orders.length >= 1 && (orders[0]?.type == 'LIMIT' || orders[1]?.type == 'LIMIT')) {
             let t = 0
-            try {
-                
-                for(let order of orders) {
-                    await cancelMarginOrder(order.orderId)
-                }
-            } catch (error) {
-                t = 1
+            for(let order of orders) {
+                const result = await cancelMarginOrder(order.orderId)
+                if(result == 'no') t = 1
             }
             if(t == 1) return
             await placeBatchIsolatedOrder()
