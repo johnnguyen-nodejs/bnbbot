@@ -22,7 +22,7 @@ const transformObject = (obj) => {
     return jsonString;
 }
 const symbol = 'BTCFDUSD'
-const stop = 1
+const stop = 0.05
 const limit = 1
 let count = 0
 let off = 0
@@ -35,7 +35,7 @@ const getBorrowBalance = async () => {
         const borrow = info.assets[0].quoteAsset.borrowed
         return { base, quote, borrow }
     } catch (error) {
-        console.log(error)
+        throw new Error(error)
     }
 }
 
@@ -47,7 +47,7 @@ const getOrderBookPrice = async () => {
             ask: books?.asks[0]?.price || 0
         }
     } catch (error) {
-        console.log(error)
+        throw new Error(error)
     }
 }
 
@@ -64,7 +64,7 @@ const placeBatchIsolatedOrder = async () => {
                 side: 'BUY',
                 type: 'LIMIT',
                 quantity: (Number(quote)/(parseFloat(bid) - limit)).fix(5),
-                price: (parseFloat(bid) - limit + 0.01).fix(2),
+                price: (parseFloat(bid) - limit + 0.011).fix(2),
                 sideEffectType: 'MARGIN_BUY'
             })
             const stoplossOrder = client.marginOrder({
@@ -81,9 +81,7 @@ const placeBatchIsolatedOrder = async () => {
                 console.log('order success')
             })
             .catch(error => {
-                console.log(error)
-                console.error('An error occurred');
-                redis.set('error', 1)
+                console.error('trigger error');
             });
         return
     } catch (error) {
@@ -106,7 +104,7 @@ const cancelMarginOrder = async (orderId) => {
         })
         return true
     } catch (error) {
-        console.log(error)
+        throw new Error(error)
     }
 }
 
@@ -126,13 +124,14 @@ const updateBatchIsolatedOrder = async () => {
                 }
             } catch (error) {
                 t = 1
+                throw new Error(error)
             }
             if(t == 1) return
             await placeBatchIsolatedOrder()
         }
         return true
     } catch (error) {
-        console.log(error.errors)
+        console.log(error)
     }
 }
 
@@ -163,7 +162,7 @@ const sellFunc = async () => {
                 await cancelMarginOrder(order.orderId)
             }
         } catch (error) {
-            throw new Error
+            throw new Error(error)
         }
         const { base, quote } = await getBorrowBalance()
         const { bid, ask } = await getOrderBookPrice()
