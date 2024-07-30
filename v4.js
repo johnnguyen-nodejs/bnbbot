@@ -140,14 +140,15 @@ const func = async () => {
             interval: '1h',
             limit: 2
         }))
-        console.log(candles)
+        // console.log(candles)
         let price = Number(candles[1].open)
         await client.ws.futuresUser(async (msg) => {
             try {
-                // console.log(msg)
+                
                 if(msg?.eventType == 'ORDER_TRADE_UPDATE' && msg?.side == "BUY" && msg?.orderType == 'LIMIT' && (msg?.orderStatus == 'FILLED' || msg?.orderStatus == 'PARTIALLY_FILLED')) {
                     if(!handle.has(msg.eventTime)) {
                         handle.set(msg.eventTime, true)
+                        console.log(msg)
                         await redis.set('stt', 1)
                     }
                 }
@@ -166,74 +167,81 @@ const func = async () => {
         console.log(error)
     }
 }
+
+const func1 = async () => {
+    try {
+        // if(Number(await redis.get(`stt`)) != 1) {
+            await cancelOrder('BTCUSDT', Number(await redis.get(`orderId`)))
+            console.log(`cancel original order at middle`)
+        // }
+    } catch (error) {
+        
+    }
+}
 const func2 = async () => {
     try {
-        // const accountInfo = await client.futuresAccountInfo()
-        // console.log(accountInfo.positions.filter(pos => pos.symbol == 'BTCUSDT'))
-        // console.log(accountInfo)
-        if(Number(await redis.get(`stt`)) == 1) {
-            await redis.set('stt', 0)
-            let price = await getMarketPrice('BTCUSDT')
-            let newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 1', newOrder.orderId)
-            await setTimeout(5000)
-            let stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 1', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 2', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 2', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 3', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 3', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 4', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 4', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 5', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 5', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 6', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 6', stt1)
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            price = await getMarketPrice('BTCUSDT')
-            newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
-            console.log('new order 7', newOrder.orderId)
-            await setTimeout(5000)
-            stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
-            if(stt1 == 'No order') return
-            console.log('cancel order 7', stt1)
+        const accountInfo = await client.futuresAccountInfo()
+        console.log(accountInfo.positions.filter(pos => pos.symbol == 'BTCUSDT'))
+        // if(Number(await redis.get(`stt`)) == 1) {
+            // await redis.set('stt', 0)
+            // let price = await getMarketPrice('BTCUSDT')
+            // let newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 1', newOrder.orderId)
+            // await setTimeout(5000)
+            // let stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 1', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 2', newOrder.orderId)
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 2', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 3', newOrder.orderId)
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 3', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 4', newOrder.orderId)
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 4', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 5', newOrder.orderId)
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 5', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 6', newOrder.orderId)
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // console.log('cancel order 6', stt1)
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // await setTimeout(5000)
+            // stt1 = await cancelOrder('BTCUSDT', newOrder.orderId)
+            // if(stt1 == 'No order') return
+            // price = await getMarketPrice('BTCUSDT')
+            // newOrder = await placeLimitOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3), (price + 1).fix(1) )
+            // console.log('new order 7', newOrder.orderId)
+            // await setTimeout(5000)
+            let stt1 = await cancelOrder('BTCUSDT', Number(await redis.get(`orderId`)))
+            console.log(`cancel original order`, stt1)
             await placeMarketOrder('BTCUSDT', 'SELL', Number(await redis.get('amountBuy')).fix(3))
-            await redis.set('amountBuy', 0)
+            // await redis.set('amountBuy', 0)
 
-        } else {
-            await cancelOrder('BTCUSDT', Number(await redis.get(`orderId`)))
-            console.log(`cancel original order`)
-        }
+        // } else {
+        // }
         
     } catch (error) {
         console.log('end error')
@@ -241,18 +249,24 @@ const func2 = async () => {
     }
 
 }
-await func2()
+// await func2()
 // console.log(Number(await redis.get('amountBuy')))
-// cron.schedule('0 * * * *', func, {
-//     scheduled: true,
-//     timezone: 'Etc/GMT'
-// });
+cron.schedule('0 0,2,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22 * * *', func, {
+    scheduled: true,
+    timezone: 'Etc/GMT'
+});
   
-// console.log('Scheduler buy started');
-// cron.schedule('10 59 * * * *', func2, {
-//     scheduled: true,
-//     timezone: 'Etc/GMT'
-// });
-// console.log('Scheduler sell started');
+console.log('Scheduler buy started');
+cron.schedule('28 0,2,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22 * * *', func1, {
+    scheduled: true,
+    timezone: 'Etc/GMT'
+});
+  
+console.log('Scheduler buy started');
+cron.schedule('10 59 0,2,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22 * * *', func2, {
+    scheduled: true,
+    timezone: 'Etc/GMT'
+});
+console.log('Scheduler sell started');
 
 
