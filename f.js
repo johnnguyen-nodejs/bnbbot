@@ -196,6 +196,7 @@ const updateBatchIsolatedOrder = async () => {
 
 const cancelBatchIsolatedOrder = async () => {
     try {
+        console.log('start batch cancel')
         const orders = await client.marginOpenOrders({
             symbol,
             isIsolated: true
