@@ -161,7 +161,7 @@ const cancelMarginOrder = async (orderId) => {
             isIsolated: true
         })
         console.log(order)
-        if(!order?.orderId) return 'no'
+        if(!order?.orderId || order?.status == 'FILLED' || order?.status == 'PARTIALLY_FILLED') return 'no'
         await client.marginCancelOrder({
             symbol,
             orderId,
@@ -201,7 +201,6 @@ const sellFunc = async () => {
             isIsolated: true
         })
         const { bid, ask } = await getOrderBookPrice()
-        await setTimeout(100)
         if(orders?.length == 0){
             if((await redis.get('error')) == 1) {
                 await redis.set('error', 0)
