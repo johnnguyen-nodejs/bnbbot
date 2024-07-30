@@ -194,51 +194,36 @@ const updateBatchIsolatedOrder = async () => {
     }
 }
 
-const sellFunc = async () => {
+const cancelBatchIsolatedOrder = async () => {
     try {
         const orders = await client.marginOpenOrders({
             symbol,
             isIsolated: true
         })
+        for(let order of orders) {
+            await cancelMarginOrder(order.orderId)
+        }
+        return true
+    } catch (error) {
+        throw new Error(error)
+    }
+}
+
+const sellFunc = async () => {
+    try {
+        const { base, quote } = await getBorrowBalance()
         const { bid, ask } = await getOrderBookPrice()
-        if(orders?.length == 0){
-            if((await redis.get('error')) == 1) {
-                await redis.set('error', 0)
-                await client.marginOrder({
-                    symbol,
-                    isIsolated: true,
-                    side: 'SELL',
-                    type: 'LIMIT',
-                    quantity: await redis.get('amt') || 0.00014,
-                    price: (Number(ask) + 1.011 ).fix(2)
-                })
-                return console.log('sell end')
-            }
-            else {
-                return console.log('stoploss')
-
-            }
-        } else {
-            try {
-                for(let order of orders) {
-                    await cancelMarginOrder(order.orderId)
-                }
-                
-            } catch (error) {
-                throw new Error(error)
-            }
-            if(orders.length == 1 && orders[0].type == 'STOP_LOSS_LIMIT') {
-                await client.marginOrder({
-                    symbol,
-                    isIsolated: true,
-                    side: 'SELL',
-                    type: 'LIMIT',
-                    quantity: await redis.get('amt') || 0.00014,
-                    price: (Number(ask) + 1.011).fix(2)
-                })
-
-            }
-
+        if(Number(quote)/(Number(base)*Number(ask)) <= 0.3) {
+            await redis.set('error', 0)
+            await client.marginOrder({
+                symbol,
+                isIsolated: true,
+                side: 'SELL',
+                type: 'LIMIT',
+                quantity: await redis.get('amt') || 0.00014,
+                price: (Number(ask) + 1.011 ).fix(2)
+            })
+            return console.log('sell end')
         }
         return
     } catch (error) {
@@ -256,7 +241,11 @@ cron.schedule('2,4,6,8,10 * * * * *', updateBatchIsolatedOrder, {
     timezone: 'Etc/GMT'
 });
   
-console.log('Scheduler buy started');
+cron.schedule('40 * * * * *', cancelBatchIsolatedOrder, {
+    scheduled: true,
+    timezone: 'Etc/GMT'
+});
+
 cron.schedule('45,47,49,51,53,55 * * * * *', sellFunc, {
     scheduled: true,
     timezone: 'Etc/GMT'
