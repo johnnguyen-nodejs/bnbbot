@@ -22,7 +22,7 @@ const transformObject = (obj) => {
     return jsonString;
 }
 const symbol = 'BTCFDUSD'
-const stop = 3
+const stop = 1
 const limit = 1
 
 // const createSignature = (obj) => {
