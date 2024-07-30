@@ -68,6 +68,7 @@ const placeBatchIsolatedOrder = async () => {
                 price: (parseFloat(bid) - limit + 0.011).fix(2),
                 sideEffectType: 'MARGIN_BUY'
             })
+            await setTimeout(50)
             const stoplossOrder = await client.marginOrder({
                 symbol,
                 isIsolated: true,
