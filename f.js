@@ -58,7 +58,8 @@ const placeBatchIsolatedOrder = async () => {
         let balance = Number(quote)/(parseFloat(bid) - limit)
         if(Number(quote)/(parseFloat(bid) - limit) >= Number(base)) balance = Number(base)
         await redis.set('amt', (balance).fix(5))
-            const limitOrder = client.marginOrder({
+        try {
+            const limitOrder = await client.marginOrder({
                 symbol,
                 isIsolated: true,
                 side: 'BUY',
@@ -67,7 +68,7 @@ const placeBatchIsolatedOrder = async () => {
                 price: (parseFloat(bid) - limit + 0.011).fix(2),
                 sideEffectType: 'MARGIN_BUY'
             })
-            const stoplossOrder = client.marginOrder({
+            const stoplossOrder = await client.marginOrder({
                 symbol,
                 isIsolated: true,
                 side: "SELL",
@@ -76,13 +77,17 @@ const placeBatchIsolatedOrder = async () => {
                 price: (parseFloat(bid) - limit - stop + 0.021).fix(2),
                 stopPrice: (parseFloat(bid) - limit - stop + 0.011).fix(2)
             })
-            Promise.all([limitOrder, stoplossOrder])
-            .then(responses => {
-                console.log('order success')
-            })
-            .catch(error => {
-                console.error('trigger error');
-            });
+            
+        } catch (error) {
+            console.error('trigger error');
+        }
+            // Promise.all([limitOrder, stoplossOrder])
+            // .then(responses => {
+            //     console.log('order success')
+            // })
+            // .catch(error => {
+            //     console.error('trigger error');
+            // });
         return
     } catch (error) {
         console.log(error)
