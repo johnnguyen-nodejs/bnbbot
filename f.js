@@ -155,6 +155,12 @@ const placeBatchIsolatedOrder = async () => {
 
 const cancelMarginOrder = async (orderId) => {
     try {
+        const order = await client.marginGetOrder({
+            symbol,
+            orderId,
+            isIsolated: true
+        })
+        if(!order?.orderId) return
         await client.marginCancelOrder({
             symbol,
             orderId,
