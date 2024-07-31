@@ -171,8 +171,8 @@ const updateStoplossIsolatedOrder = async () => {
                 side: "SELL",
                 type: 'STOP_LOSS_LIMIT',
                 quantity: parseFloat(await redis.get('amt')),
-                price: (parseFloat(orders[0].price)*1.000023).fix(2),
-                stopPrice: (parseFloat(orders[0].price)*1.000023 - 0.1).fix(2)
+                price: (parseFloat(orders[0].price)*1.00003).fix(2),
+                stopPrice: (parseFloat(orders[0].price)*1.00003 - 0.1).fix(2)
             })
             return true
         }
@@ -239,7 +239,7 @@ cron.schedule('0 * * * * *', placeBatchIsolatedOrder, {
     timezone: 'Etc/GMT'
 });
 
-cron.schedule('2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40 * * * * *', updateStoplossIsolatedOrder, {
+cron.schedule('6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40 * * * * *', updateStoplossIsolatedOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
