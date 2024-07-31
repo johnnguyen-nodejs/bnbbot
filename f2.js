@@ -47,15 +47,22 @@ const placeBatchIsolatedOrder = async () => {
         let off = Number(await redis.get('off1')) || 0
         console.log(count, off)
         redis.set('count1', count+1)
+        const orders = await client.marginOpenOrders({
+            symbol,
+            isIsolated: true
+        })
         try {
-            await cancelBatchIsolatedOrder()  
+            console.log('start batch cancel')
+            for(let order of orders) {
+                await cancelMarginOrder(order.orderId)
+            }
         } catch (error) {
             throw new Error()
         }
         const { base, quote } = await getBorrowBalance() 
         console.log(base, quote)
         const { bid, ask } = await getOrderBookPrice()
-        if(parseFloat(base) > parseFloat(process.env.BIT) + 0.0001) {
+        if(orders?.length == 1) {
             await client.marginOrder({
                 symbol,
                 isIsolated: true,
