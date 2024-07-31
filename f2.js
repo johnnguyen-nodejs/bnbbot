@@ -62,7 +62,7 @@ const placeBatchIsolatedOrder = async () => {
         const { base, quote } = await getBorrowBalance() 
         console.log(base, quote)
         const { bid, ask } = await getOrderBookPrice()
-        if(orders?.length == 1) {
+        if(orders?.length == 1 && orders[0]?.type == 'STOP_LOSS_LIMIT' && orders[0].status == 'NEW' || Number(base) > parseFloat(process.env.BIT) + 0.00005) {
             await client.marginOrder({
                 symbol,
                 isIsolated: true,
