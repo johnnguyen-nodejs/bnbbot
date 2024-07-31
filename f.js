@@ -157,6 +157,29 @@ const updateBatchIsolatedOrder = async () => {
     }
 }
 
+const updateStoplossIsolatedOrder = async () => {
+    try {
+        const orders = await client.marginOpenOrders({
+            symbol,
+            isIsolated: true
+        })
+        if(orders?.length > 0 && orders[0]?.type == 'STOP_LOSS_LIMIT' && orders[0]?.status == 'NEW' && orders[1]?.status != 'NEW') {
+            await client.marginOrder({
+                symbol,
+                isIsolated: true,
+                side: "SELL",
+                type: 'STOP_LOSS_LIMIT',
+                quantity: parseFloat(await redis.get('amt')),
+                price: (parseFloat(orders[0].price) + 1).fix(2),
+                stopPrice: (parseFloat(orders[0].price) + 0.9).fix(2)
+            })
+            return true
+        }
+    } catch (error) {
+        throw new Error(error)
+    }
+}
+
 const cancelBatchIsolatedOrder = async () => {
     try {
         console.log('start batch cancel')
@@ -215,12 +238,12 @@ cron.schedule('0 * * * * *', placeBatchIsolatedOrder, {
     timezone: 'Etc/GMT'
 });
 
-cron.schedule('2,4,6,8,10 * * * * *', updateBatchIsolatedOrder, {
+cron.schedule('2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40 * * * * *', updateStoplossIsolatedOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
   
-cron.schedule('20 * * * * *', cancelBatchIsolatedOrder, {
+cron.schedule('43 * * * * *', cancelBatchIsolatedOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
