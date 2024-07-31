@@ -9,8 +9,8 @@ import crypto from 'crypto'
 import axios from 'axios'
 
 const client = Binance.default({
-    apiKey: process.env.BINANCE_API_KEY,
-    apiSecret: process.env.BINANCE_API_SECRET,
+    apiKey: process.env.BINANCE_API_KEY1,
+    apiSecret: process.env.BINANCE_API_SECRET1
 })
 console.log(await client.ping())
 const transformObject = (obj) => {
