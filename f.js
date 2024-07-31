@@ -21,14 +21,15 @@ const transformObject = (obj) => {
 
     return jsonString;
 }
-const symbol = 'BTCFDUSD'
-const stop = 0.05
-const limit = 1
-let count = 0
-let off = 0
+const symbol = process.env.SYMBOL || 'BTCFDUSD'
+const stop = parseFloat(process.env.STOP) || 0.05
+const limit = parseFloat(process.env.LIMIT) || 1
+let count = Number(await redis.get('count')) || 0
+let off = Number(await redis.get('off')) || 0
 
 const getBorrowBalance = async () => {
     try {
+        
         const info = await client.marginIsolatedAccount({ symbols: symbol})
         const base = info.assets[0].baseAsset.free;
         const quote = info.assets[0].quoteAsset.free
@@ -53,21 +54,25 @@ const getOrderBookPrice = async () => {
 
 const placeBatchIsolatedOrder = async () => {
     try {
+        console.log(count, off)
         const { base, quote } = await getBorrowBalance() 
         const { bid, ask } = await getOrderBookPrice()
-        let balance = Number(quote)/(parseFloat(bid) - limit)
-        if(Number(quote)/(parseFloat(bid) - limit) >= Number(base)) balance = Number(base)
+        let balance = parseFloat(quote)/(parseFloat(bid) - limit)
+        if(parseFloat(quote)/(parseFloat(bid) - limit) >= parseFloat(base)) balance = parseFloat(base)
         await redis.set('amt', (balance).fix(5))
         try {
+            count += 1
+            redis.set('count', count)
             const limitOrder = await client.marginOrder({
                 symbol,
                 isIsolated: true,
                 side: 'BUY',
-                type: 'LIMIT',
+                type: 'LIMIT_MAKER',
                 quantity: (Number(quote)/(parseFloat(bid) - limit)).fix(5),
                 price: (parseFloat(bid) - limit + 0.011).fix(2)
             })
             await setTimeout(100)
+            if(Number(base) <= 0.0001) return
             const stoplossOrder = await client.marginOrder({
                 symbol,
                 isIsolated: true,
@@ -79,7 +84,19 @@ const placeBatchIsolatedOrder = async () => {
             })
             
         } catch (error) {
+            off += 1
+            redis.set('off', off)
             console.error('trigger error');
+            const { bid, ask } = await getOrderBookPrice()
+            await client.marginOrder({
+                symbol,
+                isIsolated: true,
+                side: "SELL",
+                type: 'STOP_LOSS_LIMIT',
+                quantity: balance.fix(5),
+                price: (parseFloat(bid) - limit - stop + 0.021).fix(2),
+                stopPrice: (parseFloat(bid) - limit - stop + 0.011).fix(2)
+            })
         }
             // Promise.all([limitOrder, stoplossOrder])
             // .then(responses => {
@@ -101,7 +118,7 @@ const cancelMarginOrder = async (orderId) => {
             orderId,
             isIsolated: true
         })
-        if(!order?.orderId || order?.status == 'FILLED' || order?.status == 'PARTIALLY_FILLED') return 'no'
+        if(!order?.orderId || order?.status != 'NEW') return 'no'
         await client.marginCancelOrder({
             symbol,
             orderId,
@@ -119,7 +136,7 @@ const updateBatchIsolatedOrder = async () => {
             symbol,
             isIsolated: true
         })
-        if(orders.length >= 1 && (orders[0]?.type == 'LIMIT' || orders[1]?.type == 'LIMIT')) {
+        if(orders.length >= 1 && (orders[0]?.type == 'LIMIT_MAKER' || orders[1]?.type == 'LIMIT_MAKER')) {
             let t = 0
             try {
                 
@@ -171,16 +188,20 @@ const sellFunc = async () => {
         }
         const { base, quote } = await getBorrowBalance()
         const { bid, ask } = await getOrderBookPrice()
-        if(Number(quote)/(Number(base)*Number(ask)) <= 0.3) {
-
-            await client.marginOrder({
-                symbol,
-                isIsolated: true,
-                side: 'SELL',
-                type: 'LIMIT',
-                quantity: await redis.get('amt') || 0.00014,
-                price: (parseFloat(ask) + 1.011 ).fix(2)
-            })
+        if(parseFloat(base) > parseFloat(process.env.BIT) + 0.0001) {
+            try {
+                
+                await client.marginOrder({
+                    symbol,
+                    isIsolated: true,
+                    side: 'SELL',
+                    type: 'LIMIT_MAKER',
+                    quantity: (parseFloat(base) - parseFloat(process.env.BIT)).fix(5),
+                    price: (parseFloat(ask) + limit + 0.011 ).fix(2)
+                })
+            } catch (error) {
+                throw new Error(error)
+            }
             return console.log('sell end')
         }
         return
@@ -199,7 +220,7 @@ cron.schedule('2,4,6,8,10 * * * * *', updateBatchIsolatedOrder, {
     timezone: 'Etc/GMT'
 });
   
-cron.schedule('40 * * * * *', cancelBatchIsolatedOrder, {
+cron.schedule('20 * * * * *', cancelBatchIsolatedOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
