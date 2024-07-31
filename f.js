@@ -171,8 +171,8 @@ const updateStoplossIsolatedOrder = async () => {
                 side: "SELL",
                 type: 'STOP_LOSS_LIMIT',
                 quantity: parseFloat(await redis.get('amt')),
-                price: (parseFloat(orders[0].price) + 1).fix(2),
-                stopPrice: (parseFloat(orders[0].price) + 0.9).fix(2)
+                price: (parseFloat(orders[0].price)*1.000023).fix(2),
+                stopPrice: (parseFloat(orders[0].price)*1.000023 - 0.1).fix(2)
             })
             return true
         }
