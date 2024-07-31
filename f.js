@@ -176,6 +176,11 @@ const updateStoplossIsolatedOrder = async () => {
             })
             return true
         }
+        if(orders?.length == 2 && orders[1].status == 'NEW' && orders[1].status == 'NEW') {
+            await cancelMarginOrder(orders[0].orderId)
+            await cancelMarginOrder(orders[1].orderId)
+            await placeBatchIsolatedOrder()
+        }
     } catch (error) {
         throw new Error(error)
     }
