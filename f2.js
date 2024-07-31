@@ -15,6 +15,7 @@ const symbol = process.env.SYMBOL || 'BTCFDUSD'
 const stop = parseFloat(process.env.STOP) || 0.05
 const limit = parseFloat(process.env.LIMIT) || 1
 
+
 const getBorrowBalance = async () => {
     try {
         
@@ -42,13 +43,17 @@ const getOrderBookPrice = async () => {
 
 const placeBatchIsolatedOrder = async () => {
     try {
-        
+        let count = Number(await redis.get('count1')) || 0
+        let off = Number(await redis.get('off1')) || 0
+        console.log(count, off)
+        redis.set('count1', count+1)
         try {
             await cancelBatchIsolatedOrder()  
         } catch (error) {
             throw new Error()
         }
         const { base, quote } = await getBorrowBalance() 
+        console.log(base, quote)
         const { bid, ask } = await getOrderBookPrice()
         if(parseFloat(base) > parseFloat(process.env.BIT) + 0.0001) {
             await client.marginOrder({
@@ -56,7 +61,7 @@ const placeBatchIsolatedOrder = async () => {
                 isIsolated: true,
                 side: "SELL",
                 type: 'STOP_LOSS_LIMIT',
-                quantity: balance.fix(5),
+                quantity: (parseFloat(base) - parseFloat(process.env.BIT)).fix(5),
                 price: (parseFloat(bid) - limit - stop + 0.021).fix(2),
                 stopPrice: (parseFloat(bid) - limit - stop + 0.011).fix(2)
             })
@@ -87,6 +92,7 @@ const placeBatchIsolatedOrder = async () => {
 
         return
     } catch (error) {
+        redis.set('off1', off+1)
         console.log(error)
     }
 }
