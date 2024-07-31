@@ -239,7 +239,7 @@ cron.schedule('0 * * * * *', placeBatchIsolatedOrder, {
     timezone: 'Etc/GMT'
 });
 
-cron.schedule('6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40 * * * * *', updateStoplossIsolatedOrder, {
+cron.schedule('4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40 * * * * *', updateStoplossIsolatedOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
