@@ -163,7 +163,7 @@ const updateStoplossIsolatedOrder = async () => {
             symbol,
             isIsolated: true
         })
-        if(orders?.length > 0 && orders[0]?.type == 'STOP_LOSS_LIMIT' && orders[0]?.status == 'NEW' && orders[1]?.status != 'NEW') {
+        if((orders?.length == 1 && orders[0]?.type == 'STOP_LOSS_LIMIT' && orders[0]?.status == 'NEW') || (orders.length == 2 && ((orders[0].type == 'STOP_LOSS_LIMIT' && orders[0].status == 'NEW' && orders[1].type == 'LIMIT_MAKER' && orders[1].status != 'NEW') || (orders[1].type == 'STOP_LOSS_LIMIT' && orders[1].status == 'NEW' && orders[0].type == 'LIMIT_MAKER' && orders[0].status != 'NEW')))) {
             await cancelMarginOrder(orders[0].orderId)
             await client.marginOrder({
                 symbol,
