@@ -42,9 +42,9 @@ const getOrderBookPrice = async () => {
 }
 
 const placeBatchIsolatedOrder = async () => {
+    let count = Number(await redis.get('count1')) || 0
+    let off = Number(await redis.get('off1')) || 0
     try {
-        let count = Number(await redis.get('count1')) || 0
-        let off = Number(await redis.get('off1')) || 0
         console.log(count, off)
         redis.set('count1', count+1)
         const orders = await client.marginOpenOrders({

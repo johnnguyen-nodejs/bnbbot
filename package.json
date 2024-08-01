@@ -16,6 +16,7 @@
     "crypto": "^1.0.1",
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",
+    "level": "^8.0.1",
     "node-cron": "^3.0.3",
     "technicalindicators": "^3.1.0"
   }
