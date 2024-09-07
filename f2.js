@@ -69,8 +69,8 @@ const placeBatchIsolatedOrder = async () => {
                 side: "SELL",
                 type: 'STOP_LOSS_LIMIT',
                 quantity: (parseFloat(base) - parseFloat(process.env.BIT)).fix(5),
-                price: (parseFloat(bid) - limit - stop + 0.021).fix(2),
-                stopPrice: (parseFloat(bid) - limit - stop + 0.011).fix(2)
+                price: (parseFloat(bid) - 5 + 0.021).fix(2),
+                stopPrice: (parseFloat(bid) - 5 + 0.011).fix(2)
             })
         } else {
             let balance = parseFloat(quote)/(parseFloat(bid) - limit)
@@ -104,6 +104,49 @@ const placeBatchIsolatedOrder = async () => {
     }
 }
 
+const updatePlaceOrder = async () => {
+    try {
+        const orders = await client.marginOpenOrders({
+            symbol,
+            isIsolated: true
+        })
+        const limitOrder = orders?.filter(order => order.type == 'LIMIT_MAKER' && order.status == 'NEW')
+        const stoplossOrder = orders?.filter(order => order.type == 'STOP_LOSS_LIMIT' && order.status == 'NEW')
+        if(limitOrder.length == 1) {
+            await placeBatchIsolatedOrder()
+        }
+        if(stoplossOrder.length == 1 && limitOrder.length == 0) {
+            await cancelMarginOrder(stoplossOrder[0].orderId)
+            await client.marginOrder({
+                symbol,
+                isIsolated: true,
+                side: "SELL",
+                type: 'STOP_LOSS_LIMIT',
+                quantity: parseFloat(stoplossOrder[0].origQty),
+                price: (parseFloat(stoplossOrder[0].price)+ 3 + 0.021).fix(2),
+                stopPrice: (parseFloat(stoplossOrder[0].price)+ 3 + 0.011).fix(2)
+            })
+        }
+        if(stoplossOrder.length == 0 && limitOrder.length == 0) {
+            const { base, quote } = await getBorrowBalance() 
+            const { bid, ask } = await getOrderBookPrice()
+            if((Number(base) - Number(process.env.BIT)).fix(5) > 0) {
+                await client.marginOrder({
+                    symbol,
+                    isIsolated: true,
+                    side: "SELL",
+                    type: 'STOP_LOSS_LIMIT',
+                    quantity: (parseFloat(base) - parseFloat(process.env.BIT)).fix(5),
+                    price: (parseFloat(bid)-limit -stop + 0.021).fix(2),
+                    stopPrice: (parseFloat(bid)-limit -stop + 0.011).fix(2)
+                })
+            }
+        }
+    } catch (error) {
+        console.log(error)
+    }
+}
+
 const cancelMarginOrder = async (orderId) => {
     try {
         const order = await client.marginGetOrder({
@@ -123,23 +166,12 @@ const cancelMarginOrder = async (orderId) => {
     }
 }
 
-const cancelBatchIsolatedOrder = async () => {
-    try {
-        console.log('start batch cancel')
-        const orders = await client.marginOpenOrders({
-            symbol,
-            isIsolated: true
-        })
-        for(let order of orders) {
-            await cancelMarginOrder(order.orderId)
-        }
-        return true
-    } catch (error) {
-        throw new Error(error)
-    }
-} 
-
 cron.schedule('0 * * * * *', placeBatchIsolatedOrder, {
+    scheduled: true,
+    timezone: 'Etc/GMT'
+});
+
+cron.schedule('6,10,14,18,22,26,30,34,38,42,46,50,54,58 * * * * *', updatePlaceOrder, {
     scheduled: true,
     timezone: 'Etc/GMT'
 });
