@@ -4,24 +4,32 @@ import "./prototype.js"
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
 import fs from 'fs'
+import Queue from 'bull'
+
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
     apiSecret: process.env.BINANCE_API_SECRETN
 })
+const myQueue = new Queue('equal', {
+    redis: { host: '127.0.0.1', port: 6379 }
+})
 
-class Buy {
+class Equal {
     constructor() {
         this.bId = null
         this.a = 0
         this.price = 0
+        this.start = false
         this.side = 'BUY'
-        this.f = 'equal.txt'
+        this.b = 0
+        this.mark = new Map()
         this.event()
         this.reOrder()
     }
     
     async order(quantity, price, side) {
         try {
+            this.a = 0
             const order = await client.marginOrder({
                 symbol: 'BTCFDUSD',
                 side,
@@ -31,10 +39,22 @@ class Buy {
             });
             return order;
         } catch (error) {
-            this.a = Number(quantity)
             console.log('C', error.message)
-            const now = new Date()
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${quantity} - ${price} - ${side} - error\n`, console.log)
+            if(error.message == 'Account has insufficient balance for requested action.'){
+                this.a = 0
+            } else {
+                this.a = Number(quantity)
+                const now = Date.now()
+                const obj = {
+                    time: now,
+                    type: side,
+                    quantity,
+                    price,
+                    stt: 'ERROR'
+                }
+                parentPort.postMessage(obj)
+                // this.balanceSttDb.put(now, obj)               
+            }
         }
     }
 
@@ -53,15 +73,15 @@ class Buy {
             if(this.bId){
                 await this.cancel(this.bId)
             }
-            if(this.a > 0.001) {
+            if(this.a > this.b*1.5) {
                 await this.order(this.a.fix(5), this.price.toFixed(2), this.side)
             }
-        }, 500)
+        }, 100)
     }
 
     event() {
         client.ws.marginUser(async msg => {
-            if(msg.eventType == 'executionReport' && Number(msg.quantity) > 0.00015) {
+            if(msg.eventType == 'executionReport' && Number(msg.quantity) > this.b*1.5) {
                 if(msg.orderStatus == 'NEW') {
                     this.bId = msg.orderId
                     this.a = Number(msg.quantity)
@@ -69,18 +89,30 @@ class Buy {
                 if(msg.orderStatus == 'FILLED') {
                     this.bId = null
                     this.a = 0
-                    parentPort.postMessage({ insufficient: false})
-                    const now = new Date()
-                    fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${msg.side} - filled\n`, console.log)
-                }
-                if(msg.orderStatus == 'PARTIALLY_FILLED'){
-                    this.a -= Number(msg.lastTradeQuantity)
-                    const now = new Date()
-                    fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.lastTradeQuantity} - ${msg.price} - ${msg.side} - partially\n`, console.log)
+                    const obj = {
+                        time: msg.eventTime,
+                        type: msg.side,
+                        quantity: msg.quantity,
+                        price: msg.price,
+                        stt: 'FILLED'
+                    }
+                    parentPort.postMessage(obj)
                 }
                 if(msg.orderStatus == 'CANCELLED') {
-                    const now = new Date()
-                    fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${msg.side} - error\n`, console.log)
+                    this.bId = null
+                    if(Number(msg.quantity)*Number(msg.price) - Number(msg.totalQuoteTradeQuantity) < this.b*1.5) {
+                        this.a = 0
+                    } else {
+                        this.a -= Number(totalQuoteTradeQuantity)/Number(msg.price)
+                    }
+                    const obj = {
+                        time: msg.eventTime,
+                        type: msg.side,
+                        quantity: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price),
+                        price: msg.price,
+                        stt: 'ERROR'
+                    }
+                    parentPort.postMessage(obj)                
                 }
             }
         })
@@ -88,20 +120,32 @@ class Buy {
 
     run(){
         parentPort.on('message', (message) => {
-            const { type, a, p} = message
+            const { type, a, p, f, time} = message
             this.price = p
-            if(Number(a) > 0.0001 && !this.start) {
+            this.b = f
+            if(Number(a) > this.b*1.5 && this.a == 0 && !this.start) {
+                this.start = true
                 this.side = type
-                console.log("equal", type, a, p)
+                myQueue.add({ a, p, type, time})
+                setTimeout(() =>{
+                    this.start = false
+                }, 2000)
+            }
+        })
+
+        myQueue.process(1, async job => {
+            const { a, p, type, time } = job.data
+            if(!this.mark.has(Math.floor(time/1000))){
+                this.mark.set(Math.floor(time/1000), true)
                 this.order(a.fix(5), p.toFixed(2), type)
             }
         })
     }
 }
 
-const buy = new Buy()
+const equal = new Equal()
+equal.run()
 
-buy.run()
 
 
 

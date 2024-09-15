@@ -4,7 +4,7 @@ import "./prototype.js"
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
 import Queue from 'bull'
-import fs from 'fs'
+
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
     apiSecret: process.env.BINANCE_API_SECRETN
@@ -19,12 +19,9 @@ class Buy {
         this.bPending = []
         this.bNew = []
         this.mark = new Map()
-        this.price = 0
         this.e = 0
         this.s = 0
-        this.f = 'buy.txt'
-        this.f1 = 'totalbuy.txt'
-        this.total = 0
+        this.a = 0
         this.event()
         this.reCancel()
     }
@@ -40,12 +37,18 @@ class Buy {
             });
             return order;
         } catch (error) {
-            console.log('B', error.message)
-            parentPort.postMessage({ filled: Number(quantity), usdFilled: Number(quantity)*Number(price)})
-            const now = new Date()
+            const now = Date.now()
             this.e++
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${quantity} - ${price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - error\n`, console.log)
-
+            const obj = {
+                time: now,
+                type: 'BUY',
+                quantity,
+                price,
+                stt: 'ERROR',
+                eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+            }
+            parentPort.postMessage(obj)
+            // this.tradeDb.put(now, obj)
         }
     }
 
@@ -80,25 +83,38 @@ class Buy {
 
     event() {
         client.ws.marginUser(async msg => {
-            if(msg.eventType == 'executionReport' && msg.side == 'BUY' && Number(msg.quantity) < 0.00015) {
+            if(msg.eventType == 'executionReport' && msg.side == 'BUY' && Number(msg.quantity) <= this.a + 0.00001) {
                 if(msg.orderStatus == 'NEW') {
                     this.bNew.push(msg.orderId)
                 }
-                if(msg.orderStatus == 'CANCELED' || msg.orderStatus == 'FILLED') {
+                if(msg.orderStatus == 'CANCELED') {
                     this.updateArr(this.bNew, msg.orderId)
-                    parentPort.postMessage({ filled: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price), usdFilled: Number(msg.quantity)*Number(msg.price) - Number(msg.totalQuoteTradeQuantity)})
-                    if(msg.orderStatus == 'CANCELED') {
-                        const now = new Date()
-                        this.e++
-                        fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - error\n`, console.log)
-                    } else {
-                        this.total += Number(msg.quantity)*Number(msg.price)
-                        const now = new Date()
-                        this.s++
-                        fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - filled\n`, console.log)
-                        fs.appendFile(this.f1, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${this.total}\n`, console.log)
+                    this.e++
+                    const obj = {
+                        time: msg.eventTime,
+                        type: 'BUY',
+                        quantity: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price),
+                        price: msg.price,
+                        stt: 'ERROR',
+                        eRate: (this.s*100/(this.s + this.e)).toFixed(2)
                     }
-                 }
+                    parentPort.postMessage(obj)
+                }
+                    
+                if(msg.orderStatus == 'FILLED'){
+                    this.updateArr(this.bNew, msg.orderId)
+                    const now = new Date()
+                    this.s++
+                    const obj = {
+                        time: msg.eventTime,
+                        type: 'BUY',
+                        quantity: msg.quantity,
+                        price: msg.price,
+                        stt: 'FILLED',
+                        eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+                    }
+                    parentPort.postMessage(obj)              
+                }
             }
         })
     }
@@ -106,9 +122,7 @@ class Buy {
     run(){
         parentPort.on('message', (message) => {
             const { a, p, time} = message
-            this.price = p
             if(a > 0 && p > 0) {
-                console.log('buy', a, p, time)
                 myQueue.add({ a, p, time})
             }
         })
@@ -116,6 +130,7 @@ class Buy {
             const { a, p, time } = job.data
             if(!this.mark.has(Math.floor(time/200)*2)){
                 this.mark.set(Math.floor(time/200)*2, true)
+                this.a = a.fix(5)
                 this.order(a.fix(5), p.toFixed(2))
             }
         })
@@ -125,6 +140,7 @@ class Buy {
 const buy = new Buy()
 
 buy.run()
+
 
 
 

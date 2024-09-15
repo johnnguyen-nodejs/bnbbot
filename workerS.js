@@ -3,7 +3,6 @@ dotenv.config()
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
 import "./prototype.js"
-import fs from 'fs'
 import Queue from 'bull'
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
@@ -20,11 +19,9 @@ class Sell {
         this.price = 0
         this.sIds = []
         this.mark = new Map()
-        this.f = 'sell.txt'
-        this.f1 = 'totalsell.txt'
+        this.a  = 0
         this.e = 0
         this.s = 0
-        this.total = 0
         this.reCancel()
         this.event()
     }
@@ -39,14 +36,18 @@ class Sell {
             });
             return order;
         } catch (error) {
-            if(error.message == 'Account has insufficient balance for requested action.') {
-                parentPort.postMessage({usdFilled: 0, btcFilled: 0} )
-            } else {
-                parentPort.postMessage({usdFilled: Number(quantity)*Number(price), btcFilled: Number(quantity)} )
-            }
-            const now = new Date()
+            const now = Date.now()
             this.e++
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${quantity} - ${price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - error\n`, console.log)
+            const obj = {
+                time: now,
+                type: 'SELL',
+                quantity,
+                price,
+                stt: 'ERROR',
+                eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+            }
+            parentPort.postMessage(obj)
+            // this.tradeDb.put(now, obj)           
         }
     };
     async cancel(orderId){
@@ -64,10 +65,18 @@ class Sell {
         setInterval(() => {
             if(this.sIds.length >= 1) {
                 for(const order of this.sIds) {
-                    this.cancel(order.id)
+                    this.cancel(order)
                 }
             }
         },1000)
+    }
+
+
+    async updateArr(arr, id) {
+        const index = arr.findIndex(item => item === id);
+        if (index !== -1) {
+            arr.splice(index, 1);
+        }
     }
 
     event(){
@@ -75,29 +84,35 @@ class Sell {
             if(msg.eventType == 'outboundAccountPosition') {
                 this.btcA = parseFloat(msg.balances[0].free)
             }
-            if(msg.eventType == 'executionReport' && msg.side == 'SELL' && Number(msg.quantity) < 0.00015) {
+            if(msg.eventType == 'executionReport' && msg.side == 'SELL' && Number(msg.quantity) <= this.a + 0.00001) {
                 if(msg.orderStatus == 'NEW') {
-                    this.sIds.push({
-                        id: msg.orderId,
-                        a: msg.quantity,
-                        p: msg.price
-                    })
+                    this.sIds.push(msg.orderId)
                 }
                 if(msg.orderStatus == 'FILLED') {
-                    this.sIds.length = 0
-                    parentPort.postMessage({ usdFilled: Number(msg.quantity)*Number(msg.price) - Number(msg.totalQuoteTradeQuantity), btcFilled: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price) })
-                    this.total += Number(msg.quantity)*Number(msg.price)
-                    const now = new Date()
+                    this.updateArr(this.sIds, msg.orderId)
                     this.s++
-                    fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - filled\n`, console.log)
-                    fs.appendFile(this.f1, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${this.total}\n`, console.log)
+                    const obj = {
+                        time: msg.eventTime,
+                        type: 'SELL',
+                        quantity: msg.quantity,
+                        price: msg.price,
+                        stt: 'FILLED',
+                        eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+                    }
+                    parentPort.postMessage(obj)                  
                 }
                 if(msg.orderStatus == 'CANCELED') {
-                    this.sIds.length = 0
-                    parentPort.postMessage({ usdFilled: Number(msg.quantity)*Number(msg.price) - Number(msg.totalQuoteTradeQuantity), btcFilled: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price) })
-                    const now = new Date()
+                    this.updateArr(this.sIds, msg.orderId)
                     this.e++
-                    fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()} - ${msg.quantity} - ${msg.price} - ${(this.s*100/(this.s + this.e)).toFixed(2)} - error\n`, console.log)
+                    const obj = {
+                        time: msg.eventTime,
+                        type: 'SELL',
+                        quantity: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price),
+                        price: msg.price,
+                        stt: 'ERROR',
+                        eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+                    }
+                    parentPort.postMessage(obj)                 
                 }
             }
         })
@@ -117,6 +132,7 @@ class Sell {
             console.log(a, p, time)
             if(!this.mark.has(Math.floor(time/200)*2)){
                 this.mark.set(Math.floor(time/200)*2, true)
+                this.a = a.fix(5)
                 this.order(a.fix(5), p.toFixed(2))
             }
         })
@@ -124,7 +140,9 @@ class Sell {
 }
 
 const sell = new Sell()
+
 sell.run()
+
 
 
 

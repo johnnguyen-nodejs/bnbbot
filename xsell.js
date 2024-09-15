@@ -3,27 +3,30 @@ dotenv.config()
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
 import "./prototype.js"
+import fs from 'fs'
+import Queue from 'bull'
+// import { tradeDb } from './db.js'
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
     apiSecret: process.env.BINANCE_API_SECRETN
 })
+const myQueue = new Queue('sell', {
+    redis: { host: '127.0.0.1', port: 6379 }
+})
+
 
 class Sell {
     constructor() {
         this.sIds = []
-        this.bs = 0
-        this.caps = 0
-        this.profit = 0
-        this.btcA = 0
-        this.price = 0
-        this.cancelAll()
-        this.reOrder()
+        this.mark = new Map()
+        this.a  = 0
+        this.e = 0
+        this.s = 0
+        this.reCancel()
         this.event()
     }
-
     async order(quantity, price){
         try {
-            if(Number(quantity) < 0.0001) return
             const order = await client.marginOrder({
                 symbol: 'BTCFDUSD',
                 side: 'SELL',
@@ -33,10 +36,20 @@ class Sell {
             });
             return order;
         } catch (error) {
-            console.log('-')
+            // const now = Date.now()
+            this.e++
+            console.log('sell error', (this.s*100/(this.s + this.e)).toFixed(2))
+            // const obj = {
+            //     time: now,
+            //     type: 'SELL',
+            //     quantity,
+            //     price,
+            //     stt: 'ERROR',
+            //     eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+            // }
+            // tradeDb.put(now, obj)           
         }
     };
-    
     async cancel(orderId){
         try {
             await client.marginCancelOrder({
@@ -47,81 +60,87 @@ class Sell {
             console.log('-')
         }
     }
-    
-    updateArr(arr, id){
-        const index = arr.findIndex(item => item.i === id);
+
+    reCancel(){
+        setInterval(() => {
+            if(this.sIds.length >= 1) {
+                for(const order of this.sIds) {
+                    this.cancel(order)
+                }
+            }
+        },100)
+    }
+
+
+    async updateArr(arr, id) {
+        const index = arr.findIndex(item => item === id);
         if (index !== -1) {
             arr.splice(index, 1);
         }
     }
 
-    cancelAll(){
-        setInterval(() => {
-            if(this.sIds.length >= 2) {
-                for(const order of this.sIds) {
-                    this.cancel(order.i)
-                }
-            }
-        },100)
-    }
-    reOrder() {
-        setInterval(() => {
-            if(this.bs > 0.0001 && this.caps/this.bs > 50000) {
-                this.order(this.bs.toFixed(5), (this.caps/this.bs + 0.001).toFixed(2))
-            }
-        },100)
-    }
-
     event(){
+        // tradeDb.open()
         client.ws.marginUser(msg => {
             if(msg.eventType == 'executionReport' && msg.side == 'SELL') {
                 if(msg.orderStatus == 'NEW') {
-                    this.bs -= Number(msg.quantity)
-                    this.caps -= Number(msg.quantity)*Number(msg.price)
-                    this.sIds.push({
-                        i: msg.orderId,
-                        a: msg.quantity,
-                        p: msg.price
-                    })
-                    console.log(1, this.bs, this.caps)
+                    this.sIds.push(msg.orderId)
                 }
                 if(msg.orderStatus == 'FILLED') {
                     this.updateArr(this.sIds, msg.orderId)
-                    console.log(2, this.bs, this.caps)
-                }
+                    this.s++
+                    console.log('sell success', (this.s*100/(this.s + this.e)).toFixed(2))
+                    const obj = {
+                        time: msg.eventTime,
+                        type: 'SELL',
+                        quantity: msg.quantity,
+                        price: msg.price,
+                        stt: 'FILLED',
+                        eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+                    }
+                    parentPort.postMessage(obj)
+                    // tradeDb.put(msg.eventTime, obj)                  
+                 }
                 if(msg.orderStatus == 'CANCELED') {
-                    this.bs += Number(msg.quantity) - Number(msg.totalTradeQuantity)
-                    this.caps += Number(msg.quantity)*Number(msg.price) - Number(msg.totalQuoteTradeQuantity)
                     this.updateArr(this.sIds, msg.orderId)
-                    console.log(3, this.bs, this.caps)
+                    this.e++
+                    console.log('sell error', (this.s*100/(this.s + this.e)).toFixed(2))
+                    // const obj = {
+                    //     time: msg.eventTime,
+                    //     type: 'SELL',
+                    //     quantity: Number(msg.quantity) - Number(msg.totalQuoteTradeQuantity)/Number(msg.price),
+                    //     price: msg.price,
+                    //     stt: 'ERROR',
+                    //     eRate: (this.s*100/(this.s + this.e)).toFixed(2)
+                    // }
+                    // tradeDb.put(msg.eventTime, obj)                 
                 }
             }
         })
     }
 
-    worker(){
+    run(){
         parentPort.on('message',async (message) => {
-            const { a, p } = message
-            this.bs += Number(a)
-            this.caps += Number(a)*Number(p)
-            this.profit += 4*Number(a)
-            console.log(0, this.bs, this.caps)
-            if(this.bs > 0.0001 && this.caps/this.bs > 50000) {
-                if(p > this.caps/this.bs) {
-                    this.caps = p*this.bs
-                    this.order(this.bs.toFixed(5), (p + 0.001).toFixed(2))
-                } else {
-                    this.order(this.bs.toFixed(5), (this.caps/this.bs + 0.001).toFixed(2))
-                }
+            const { a, p, time } = message
+            if(a > 0 && p > 0) {
+                myQueue.add({ a, p, time })
+            }
+        })
+
+        myQueue.process(1, async (job) => {
+            const { a, p, time } = job.data
+            console.log(a, p, time)
+            if(!this.mark.has(Math.floor(time/200)*2)){
+                this.mark.set(Math.floor(time/200)*2, true)
+                this.order(a.fix(5), p.toFixed(2))
             }
         })
     }
-
 }
 
 const sell = new Sell()
-sell.worker()
 
+sell.run()
 
 
 

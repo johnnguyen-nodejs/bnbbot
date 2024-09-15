@@ -2,10 +2,9 @@ import * as dotenv from 'dotenv'
 dotenv.config()
 import "./prototype.js"
 import Binance from 'binance-api-node'
-import { MessageChannel, Worker } from 'worker_threads'
+import { Worker } from 'worker_threads'
 import { redis } from './lib.js'
-import { Bot } from 'grammy'
-import fs from 'fs'
+import { balanceDb, balanceSttDb, capDb, flashDb, priceDb, tradeDb } from './db.js'
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
     apiSecret: process.env.BINANCE_API_SECRETN
@@ -16,32 +15,28 @@ const symbol = process.env.SYMBOL || 'BTCFDUSD'
 
 // main()
 class Trade {
-    constructor(cap, symbol, ePrice) {
+    constructor(cap, symbol) {
+        this.capDb = capDb
+        this.flashDb = flashDb
+        this.balanceDb = balanceDb
+        this.priceDb = priceDb
+        this.tradeDb = tradeDb
+        this.balanceSttDb = balanceSttDb
         this.symbol = symbol
         this.start = 0
         this.buy = true
-        this.pending = false
-        this.insufficient = false
         this.mark = new Map()
         this.btcA = 0
         this.usdA = 0
         this.btcL = 0
         this.usdL = 0
         this.usd = cap
-        this.vusd = 0
         this.btc = 0
-        this.vbtc = 0
-        this.ousd = 0
-        this.f = 'cap.txt'
-        this.f1 = 'profit.txt'
-        this.f2 = 'all.txt'
-        this.ePrice = ePrice
         this.bWorker = new Worker('./workerB.js')
         this.sWorker = new Worker('./workerS.js')
         this.cWorker = new Worker('./workerC.js')
         // this.bot()
         this.balance()
-        this.event()
         this.updateBalance()
     }
 
@@ -58,14 +53,13 @@ class Trade {
     // }
 
     async balance() {
-        this.usd = Number(await redis.get('cap')) || 6
+
+        // this.usd = Number(await redis.get('cap')) || 6
         const accountInfo = await client.marginAccountInfo();
-        this.vusd = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').free)
-        this.vbtc = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').free)
-        this.btcA = this.vbtc
-        this.usdA = this.vusd
-        const now = new Date()
-        fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: VUSD-${this.vusd} VBTC-${this.vbtc}\n`, console.log)
+        this.usdA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').free)
+        this.btcA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').free)
+        this.usdL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').locked)
+        this.btcL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').locked)
     }
 
     updateBalance() {
@@ -75,52 +69,47 @@ class Trade {
                 this.usdA = parseFloat(msg.balances[2].free)
                 this.btcL = parseFloat(msg.balances[0].locked)
                 this.usdL = parseFloat(msg.balances[2].locked)
-                const now = new Date()
-                fs.appendFile(this.f2, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: ALL-${this.usdA + this.usdL +(this.btcA + this.btcL)*this.start} PRICE-${this.start}\n`, console.log)
+                if((this.usdL + this.usdA)*4 < this.usdA + this.usdL + (this.btcA + this.btcL)* this.start) {
+                    this.cWorker.postMessage({ type: 'SELL', a: (this.btcA + this.usdA/this.start) / 4, p: this.start, f: this.btc, time: msg.eventTime})
+                    const o = {
+                        time: msg.eventTime,
+                        type: 'SELL',
+                        amount: ((this.btcA + this.usdA/this.start)/4).fix(5),
+                        price: this.start
+                    }
+                    this.balanceDb.put(msg.eventTime, o)
+                }
+                if((this.btcA + this.btcL)*this.start*4 < this.usdA + this.usdL + (this.btcA + this.btcL)*this.start){
+                    this.cWorker.postMessage({ type: 'BUY', a: (this.btcA + this.usdA/this.start) / 4, p: this.start, f: this.btc, time: msg.eventTime})
+                    const o = {
+                        time: msg.eventTime,
+                        type: 'BUY',
+                        amount: ((this.btcA + this.usdA/this.start)/4).fix(5),
+                        price: this.start
+                    }
+                    this.balanceDb.put(msg.eventTime, o)
+                }
+                const obj = {
+                    time: msg.eventTime,
+                    total: this.usdA + this.usdL + (this.btcA + this.btcL)*this.start,
+                    btc: this.btcA + this.btcL,
+                    usd: this.usdA + this.usdL,
+                    price: this.start
+                }
+                this.capDb.put(msg.eventTime, obj)
             }
         })
     }
 
     event(){
-        this.sWorker.on("message", msg => {
-            const { usdFilled, btcFilled } = msg
-            this.vusd -= usdFilled
-            this.vbtc += btcFilled
-            const now = new Date()
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: VUSD-${this.vusd} VBTC-${this.vbtc}\n`, console.log)
-            console.log('virtual0', this.vbtc, this.vusd)
-            if(this.vusd*3 < this.vbtc*this.start) {
-                this.insufficient = true
-                this.cWorker.postMessage({ type: 'SELL', a: this.btcA - (this.btcA + this.usdA/this.start) / 2, p: this.start})
-            }
-            if(this.vusd > this.vbtc*this.start*3){
-                this.insufficient = true
-                this.cWorker.postMessage({ type: 'BUY', a: this.usdA/this.start - (this.btcA + this.usdA/this.start) / 2, p: this.start})
-            }
+        this.bWorker.on('mesasge', (msg) => {
+            this.tradeDb.put(msg.time,msg)
         })
-        this.bWorker.on("message", msg => {
-            const { filled, usdFilled } = msg
-            this.vbtc -= filled
-            this.vusd += usdFilled
-            console.log('virtual1', this.vbtc, this.vusd)
-            const now = new Date()
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: VUSD-${this.vusd} VBTC-${this.vbtc}\n`, console.log)
-            if(this.vusd*3 < this.vbtc*this.start) {
-                this.insufficient = true
-                this.cWorker.postMessage({ type: 'SELL', a: this.btcA - (this.btcA + this.usdA/this.start) / 2, p: this.start})
-            }
-            if(this.vusd > this.vbtc*this.start*3){
-                this.insufficient = true
-                this.cWorker.postMessage({ type: 'BUY', a: this.usdA/this.start - (this.btcA + this.usdA/this.start) / 2, p: this.start})
-            }
+        this.sWorker.on('mesasge', (msg) => {
+            this.tradeDb.put(msg.time, msg)
         })
-        this.cWorker.on("message", msg => {
-            const { insufficient } = msg
-            this.insufficient = insufficient
-            this.vbtc = this.btcA
-            this.vusd = this.usdA
-            const now = new Date()
-            fs.appendFile(this.f, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: VUSD-${this.vusd} VBTC-${this.vbtc}\n`, console.log)
+        this.sWorker.on('mesasge', (msg) => {
+            this.balanceSttDb.put(msg.time, msg)
         })
     }
     run(){
@@ -130,11 +119,19 @@ class Trade {
                 if(this.buy) {
                     this.buy = false
                     this.btc = (this.usd/p).fix(5)
-                    this.ousd = this.usd
                     this.usd -= this.btc*p
                     redis.set('cap', this.usd + this.btc*p)
                     console.log('--BUY--', this.usd + this.btc*p, this.btc*p, this.btc, p)
                     this.bWorker.postMessage({ p: p - 0.01, a: this.btc, time: trade.eventTime })
+                    const obj = {
+                        time: trade.eventTime,
+                        type: 'BUY',
+                        amount: this.btc,
+                        price: p,
+                        btc: 0,
+                        usd: this.usd + this.btc*p
+                    }
+                    this.flashDb.put(trade.eventTime, obj)
                 }
 
             }
@@ -144,21 +141,28 @@ class Trade {
                     this.usd += p*this.btc
                     console.log('--SELL--', this.usd, this.btc*p, this.btc, p)
                     this.sWorker.postMessage({ a: this.btc, p: p + 0.01, time: trade.eventTime})
-                    const now = new Date()
-                    fs.appendFile(this.f1, `${now.getHours()+':'+now.getMinutes()+':'+now.getSeconds()}: new-${this.usd} old-${this.ousd} profit: ${this.usd - this.ousd}\n`, console.log)
-                    this.btc = 0
+                    const obj = {
+                        time: trade.eventTime,
+                        type: 'SELL',
+                        amount: this.btc,
+                        price: p,
+                        btc: this.btc,
+                        usd: this.usd - this.btc*p
+                    }
+                    this.flashDb.put(trade.eventTime, obj)
                 }
             }
 
             this.start = p
-            this.bWorker.postMessage({ a: 0, p, time: 0 })
-            this.cWorker.postMessage({type: 'price', a: 0, p })
+            this.cWorker.postMessage({type: 'price', a: 0, p, f: this.btc })
+            this.priceDb.put(trade.eventTime, p)
         })
     }
 
 
 }
 
-const trade = new Trade(6, symbol)
-
+const trade = new Trade(12, symbol)
 trade.run()
+
+
