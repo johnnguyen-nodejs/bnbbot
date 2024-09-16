@@ -79,7 +79,7 @@ class Trend {
                     this.last.trend = 'up';
                     this.cooks.push(this.last);
                     this.trades.push({id: 1, type: 'SELL', price: this.last.low})
-                    this.worker.postMessage({id: 2, type: 'SELL', price: this.last.low })
+                    this.worker.postMessage({id: 1, type: 'SELL', price: this.last.low })
                 }
             
                 if (this.last.high > candle.high && this.last.low > candle.low) {
@@ -88,7 +88,7 @@ class Trend {
                     this.last.trend = 'down';
                     this.cooks.push(this.last);
                     this.trades.push({id: 1, type: 'BUY', price: this.last.high });
-                    this.worker.postMessage({id: 2, type: 'BUY', price: this.last.high })
+                    this.worker.postMessage({id: 1, type: 'BUY', price: this.last.high })
                 }
             } else {
                 this.last = {...candle}
@@ -121,22 +121,25 @@ class Trend {
             const now = new Date()
             const minutes = now.getMinutes()
             const seconds = now.getSeconds()
-            if(this.time.includes(minutes) && seconds == 0) {
-                let candle = {
-                    low: this.low,
-                    high: this.high
+            if(minutes%this.time === 0 && seconds === 0) {
+                if(seconds === 0){
+                    let candle = {
+                        low: this.low,
+                        high: this.high
+                    }
+                    this.low = 1e10
+                    this.high = 0
+                    this.filter(candle)
+                    console.log(candle, this.last ,this.cooks,this.trades)
                 }
-                this.low = 1e10
-                this.high = 0
-                this.filter(candle)
-                console.log(candle, this.last ,this.cooks,this.trades)
-            }
-            if(this.time.includes(minutes) && seconds == 59) {
-                this.worker.postMessage({ type: 'CANCEL', price: this.price, id: 0})
+                if(seconds === 59){
+                    console.log('cancel time')
+                    this.worker.postMessage({ type: 'CANCEL', price: this.price, id: 0})
+                }
             }
         }, 1000);
     }
 }
 
-const trend = new Trend('BTCFDUSD', [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59])
+const trend = new Trend('BTCFDUSD', 5)
 trend.run()

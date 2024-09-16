@@ -10,8 +10,10 @@ const client = Binance.default({
 })
 
 class Buy {
-    constructor() {
+    constructor(symbol) {
+        this.symbol = symbol
         this.oNew = []
+        this.mkNew = []
         this.price = 0
         this.k = 0
         this.btcA = 0
@@ -24,7 +26,7 @@ class Buy {
     async order(quantity, price, stopPrice, side) {
         try {
             const order = await client.marginOrder({
-                symbol: 'BTCFDUSD',
+                symbol: this.symbol,
                 side,
                 type: 'STOP_LOSS_LIMIT',
                 quantity,
@@ -34,17 +36,16 @@ class Buy {
             return order;
         } catch (error) {
             console.log(side, error.message)
-            this.order(quantity, this.price.toFixed(5), (this.price - 0.01).toFixed(2),side)
+            this.order(quantity, price, stopPrice,side)
         }
     }
     async cancel(orderId) {
         try {
             await client.marginCancelOrder({
-                symbol: 'BTCFDUSD',
+                symbol: this.symbol,
                 orderId
             })
         } catch (error) {
-            console.log('C', error.message)
             this.oNew.length = 0
         }
     }
@@ -102,14 +103,14 @@ class Buy {
                     setTimeout(() => {
                         if(msg.side == 'BUY'){
                             if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), Number(msg.price).toFixed(2), (Number(msg.price) - 0.01).toFixed(2), 'SELL')
+                                this.order(this.btcA.fix(5), Number(msg.price).toFixed(2), (this.price - 0.01).toFixed(2), 'SELL')
                             }
                         } else {
                             if(this.usdA > 6){
-                                this.order((this.usdA/Number(msg.price)).fix(5), Number(msg.price).toFixed(2), (Number(msg.price) - 0.01).toFixed(2), 'BUY')
+                                this.order((this.usdA/Number(msg.price)).fix(5), Number(msg.price).toFixed(2), (this.price + 0.01).toFixed(2), 'BUY')
                             }
                         }
-                    }, 50);
+                    }, 20);
                     
                 }
             }
@@ -126,18 +127,18 @@ class Buy {
                         console.log('id20')
                         if(type == 'BUY'){
                             if(this.usdA > 6){
-                                this.order((this.usdA/this.price).fix(5), this.price.toFixed(2), (this.price - 0.01).toFixed(2), type)
+                                this.order((this.usdA/(this.price + 3.01)).fix(5), (this.price + 3.01).toFixed(2), (this.price + 3).toFixed(2), type)
                             }
                         } else {
                             if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), this.price.toFixed(2), (this.price - 0.01).toFixed(2), type)
+                                this.order(this.btcA.fix(5), (this.price - 3.01).toFixed(2), (this.price - 3).toFixed(2), type)
                             }
                         }
                     } else {
                         console.log('id21')
                         if(type == 'BUY'){
                             if(this.usdA > 6){
-                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
+                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
                             }
                         } else {
                             if(this.btcA*this.price > 6){
@@ -151,23 +152,35 @@ class Buy {
                         console.log('id30')
                         if(type == 'BUY'){
                             if(this.usdA > 6){
-                                this.order((this.usdA/this.price).fix(5), this.price.toFixed(2), (this.price - 0.01).toFixed(2), type)
+                                this.order((this.usdA/(this.price + 3.01)).fix(5), (this.price + 3.01).toFixed(2), (this.price + 3).toFixed(2), type)
                             }
                         } else {
                             if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), this.price.toFixed(2), (this.price - 0.01).toFixed(2), type)
+                                this.order(this.btcA.fix(5), (this.price - 3.01).toFixed(2), (this.price - 3).toFixed(2), type)
                             }
                         }
                     } else {
                         console.log('id31')
                         if(type == 'BUY'){
                             if(this.usdA > 6) {
-                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
+                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
                             }
                         } else {
                             if(this.btcA*this.price > 6){
                                 this.order(this.btcA.fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
                             }
+                        }
+                    }
+                }
+                if(id == 1){
+                    console.log('id10')
+                    if(type == 'BUY'){
+                        if(this.usdA > 6) {
+                            this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
+                        }
+                    } else {
+                        if(this.btcA*this.price > 6){
+                            this.order(this.btcA.fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
                         }
                     }
                 }
@@ -187,7 +200,7 @@ class Buy {
     }
 }
 
-const buy = new Buy()
+const buy = new Buy('BTCFDUSD')
 
 buy.run()
 
