@@ -19,6 +19,7 @@ let btcAmount = 0
 let usdAmount = 0
 let btcLocked = 0
 let usdLocked = 0
+let btcBorrowed = 0
 let price = 0
 
 const getBalance = async () => {
@@ -28,6 +29,7 @@ const getBalance = async () => {
         usdLocked = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').locked)
         btcAmount = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').free)
         btcLocked = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').locked)
+        btcBorrowed = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').borrowed)
         return
     } catch (error) {
         throw new Error(error)
@@ -39,8 +41,8 @@ const main = async () => {
     try {
         
         getBalance()
-        let total = usdAmount + usdLocked + (btcAmount + btcLocked)* price
-        console.log( `${usdAmount}-${usdLocked}-${btcLocked}-${btcAmount}-${price}-${total}`)
+        let total = usdAmount + usdLocked + (btcAmount + btcLocked - btcBorrowed)* price
+        console.log( `${usdAmount}-${usdLocked}-${btcLocked}-${btcAmount}-${btcBorrowed}-${price}-${total}`)
         // await bot.api.sendMessage(1628930989, `${usdAmount}-${usdLocked}-${btcLocked}-${btcAmount}-${price}-${total}`)
         client.ws.trades([symbol], async trade => {
             try {

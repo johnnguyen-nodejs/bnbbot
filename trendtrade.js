@@ -3,6 +3,7 @@ dotenv.config()
 import "./prototype.js"
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
+import { Level } from 'level'
 
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
@@ -10,23 +11,32 @@ const client = Binance.default({
 })
 
 class Buy {
-    constructor(symbol) {
-        this.symbol = symbol
-        this.oNew = []
-        this.mkNew = []
+    constructor(asset, quote, aLimit, qLimit) {
+        this.asset = asset
+        this.quote = quote
+        this.aLimit = aLimit
+        this.qLimit = qLimit
+        this.db = new Level('db3', {valueEncoding: 'json'})
+        this.oNew = new Map()
+        this.last = {
+            high: 0,
+            low: 0,
+            trend: 'down'
+        }
         this.price = 0
-        this.k = 0
         this.btcA = 0
         this.btcL = 0
         this.usdA = 0
         this.usdL = 0
+        this.btcB = 0
+        this.usdB = 0
         this.event()
     }
     
     async order(quantity, price, stopPrice, side) {
         try {
             const order = await client.marginOrder({
-                symbol: this.symbol,
+                symbol: this.asset + this.quote,
                 side,
                 type: 'STOP_LOSS_LIMIT',
                 quantity,
@@ -42,41 +52,36 @@ class Buy {
     async cancel(orderId) {
         try {
             await client.marginCancelOrder({
-                symbol: this.symbol,
+                symbol: this.asset + this.quote,
                 orderId
             })
         } catch (error) {
-            this.oNew.length = 0
+            console.log('-')
         }
     }
 
-    async loan(){
+    async loan(asset, amount) {
         try {
-            const amount = await client.marginMaxBorrow({ asset: 'FDUSD'})
-            await client.marginLoan({
-                asset: 'FDUSD',
-                amount
-            })
-            await this.balance()
+          const loanResponse = await client.marginLoan({
+            asset: asset,
+            amount: amount,
+          });
+          console.log('Loan: ', loanResponse);
         } catch (error) {
-            console.log("Loan", error.message)
+          console.error('Loan Error: ', error.message);
         }
-    }
+      }
 
-    async updateArr(arr, id) {
-        const index = arr.findIndex(item => item === id);
-        if (index !== -1) {
-            arr.splice(index, 1);
-        }
-    }
 
     async balance(){
         try {
             const accountInfo = await client.marginAccountInfo();
-            this.usdA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD')?.free)
-            this.btcA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC')?.free)
-            this.usdL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD')?.locked)
-            this.btcL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC')?.locked)
+            this.usdA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.quote)?.free)
+            this.btcA = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.asset)?.free)
+            this.usdL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.quote)?.locked)
+            this.btcL = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.asset)?.locked)
+            this.usdB = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.quote)?.borrowed)
+            this.btcB = parseFloat(accountInfo.userAssets.find(asset => asset.asset === this.asset)?.borrowed)
         } catch (error) {
             console.log('-')
         }
@@ -86,32 +91,33 @@ class Buy {
         await this.balance()
         client.ws.marginUser( msg => {
             if(msg.eventType == 'outboundAccountPosition') {
-                this.btcA = parseFloat(msg.balances[0]?.free)
-                this.usdA = parseFloat(msg.balances[2]?.free)
-                this.btcL = parseFloat(msg.balances[0]?.locked)
-                this.usdL = parseFloat(msg.balances[2]?.locked)
+                this.btcA = parseFloat(msg.balances.find(asset => asset.asset === this.asset)?.free)
+                this.usdA = parseFloat(msg.balances.find(asset => asset.asset === this.quote)?.free)
+                this.btcL = parseFloat(msg.balances.find(asset => asset.asset === this.asset)?.locked)
+                this.usdL = parseFloat(msg.balances.find(asset => asset.asset === this.quote)?.locked)
             }
             if(msg.eventType == 'executionReport' && msg.orderType == "STOP_LOSS_LIMIT") {
                 if(msg.orderStatus == 'NEW') {
-                    this.oNew.push(msg.orderId)
-                    console.log('---1---')
+                    if(!this.oNew.get(msg.orderId)){
+                        this.oNew.set(msg.orderId, true)
+                        console.log('new order: ', msg.orderId)
+                    }
                 }
                 if(msg.orderStatus == 'FILLED') {
-                    this.updateArr(this.oNew, msg.orderId)
-                    this.k++
-                    console.log('---2---')
-                    setTimeout(() => {
-                        if(msg.side == 'BUY'){
-                            if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), Number(msg.price).toFixed(2), (this.price - 0.01).toFixed(2), 'SELL')
-                            }
-                        } else {
-                            if(this.usdA > 6){
-                                this.order((this.usdA/Number(msg.price)).fix(5), Number(msg.price).toFixed(2), (this.price + 0.01).toFixed(2), 'BUY')
-                            }
-                        }
-                    }, 20);
+                    this.oNew.delete(msg.orderId)
+                    console.log('filled: ', msg.orderId)
+                    this.db.put(msg.eventTime, {
+                        time: new Date(msg.eventTime),
+                        symbol: msg.symbol,
+                        side: msg.side,
+                        price: msg.price,
+                        amount: msg.quantity
+                    })
                     
+                }
+                if(msg.orderStatus == 'CANCELED'){
+                    this.oNew.delete(msg.orderId)
+                    console.log('cancel success')
                 }
             }
         })
@@ -119,88 +125,39 @@ class Buy {
 
     run(){
         parentPort.on('message', async (message) => {
-            const { type, price, id} = message
-            if(type == 'BUY' || type =='SELL') {
-                console.log(type, price, id)
-                if(id == 2 ){
-                    if(this.k > 0 && this.k%2 == 0){
-                        console.log('id20')
-                        if(type == 'BUY'){
-                            if(this.usdA > 6){
-                                this.order((this.usdA/(this.price + 3.01)).fix(5), (this.price + 3.01).toFixed(2), (this.price + 3).toFixed(2), type)
-                            }
-                        } else {
-                            if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), (this.price - 3.01).toFixed(2), (this.price - 3).toFixed(2), type)
-                            }
-                        }
-                    } else {
-                        console.log('id21')
-                        if(type == 'BUY'){
-                            if(this.usdA > 6){
-                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
-                            }
-                        } else {
-                            if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
-                            }
-                        }
-                    }
+            const { type, price, last} = message
+            if(type == 'BUY') {
+                this.last = {...last}
+                console.log(this.usdA, this.btcA, this.usdB, this.btcB)
+                if(this.usdA > 6){
+                    this.order((this.usdA/last.high).fix(this.aLimit), (last.high - 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), type)
                 }
-                if(id == 3){
-                    if(this.k > 0 && this.k%2 == 0){
-                        console.log('id30')
-                        if(type == 'BUY'){
-                            if(this.usdA > 6){
-                                this.order((this.usdA/(this.price + 3.01)).fix(5), (this.price + 3.01).toFixed(2), (this.price + 3).toFixed(2), type)
-                            }
-                        } else {
-                            if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), (this.price - 3.01).toFixed(2), (this.price - 3).toFixed(2), type)
-                            }
-                        }
-                    } else {
-                        console.log('id31')
-                        if(type == 'BUY'){
-                            if(this.usdA > 6) {
-                                this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
-                            }
-                        } else {
-                            if(this.btcA*this.price > 6){
-                                this.order(this.btcA.fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
-                            }
-                        }
-                    }
+                console.log('buy order', this.usdA)
+            }
+            if(type == 'SELL'){
+                this.last = {...last}
+                console.log(this.usdA, this.btcA, this.usdB, this.btcB)
+                if((this.btcA - this.btcB)*this.price > 6){
+                    this.order(((this.btcA - this.btcB)*2).fix(this.aLimit), (last.low + 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), type)
+                    // if(this.btcA*0.55 > this.btcB){
+                    //     this.loan('BTC', (this.btcA*0.1).fix(5))
+                    // }
                 }
-                if(id == 1){
-                    console.log('id10')
-                    if(type == 'BUY'){
-                        if(this.usdA > 6) {
-                            this.order((this.usdA/price).fix(5), price.toFixed(2), (price + 0.01).toFixed(2), type)
-                        }
-                    } else {
-                        if(this.btcA*this.price > 6){
-                            this.order(this.btcA.fix(5), price.toFixed(2), (price - 0.01).toFixed(2), type)
-                        }
-                    }
-                }
-                this.k = 0
-            } 
+                console.log('sell order', this.btcA)
+            }
             if(type == 'PRICE'){
                 this.price = price
             }
             if(type == 'CANCEL'){
-                if(this.oNew.length > 0){
-                    for(const id of this.oNew){
-                        this.cancel(id)
-                    }
+                for(let id of this.oNew.keys()){
+                    this.cancel(id)
                 }
             }
         })
     }
 }
 
-const buy = new Buy('BTCFDUSD')
+const buy = new Buy('BTC','FDUSD',5,2)
 
 buy.run()
 
