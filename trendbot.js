@@ -43,13 +43,13 @@ class Trend {
             }
             if(this.price > this.last.high && this.low > this.last.low && this.last.trend == 'up'){
                 this.keep = true
-                this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}})
+                this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}, id: 0})
             }
             if(this.price < this.last.low && this.high < this.last.high && this.last.trend == 'down'){
                 this.keep = true
-                this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}})
+                this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}, id: 0})
             }
-            this.worker.postMessage({ type: 'PRICE', price: this.price, last: {...this.last}})
+            this.worker.postMessage({ type: 'PRICE', price: this.price, last: {...this.last}, id: 0})
         })
     }
 
@@ -60,7 +60,7 @@ class Trend {
                 this.last.trend = 'down';
                 this.cooks.push(this.last);
                 this.trades.push({type: 'BUY', price: this.price, last: {...this.last} });
-                this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last} })
+                this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last}, id: 10 })
                 console.log('inbounce down')
                 this.keep = false
             }
@@ -69,48 +69,42 @@ class Trend {
                 this.last.trend = 'up';
                 this.cooks.push(this.last);
                 this.trades.push({type: 'SELL', price: this.price, last: {...this.last} });
-                this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last} })
+                this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last}, id: 10 })
                 console.log('inbounce up')
                 this.keep = false
             }
         }
         if (this.last.high < candle.high && this.last.low > candle.low) {
     
-            if (this.last) {
-                if (this.last.trend == 'up') {
-                    this.last = {...candle}
-                    this.last.trend = this.keep? 'up': 'down'
-                    this.cooks.push(this.last);
-                    if(this.last.trend == 'up'){
-                        console.log('outbounce up');
-                        this.trades.push({type: 'SELL', price: this.price, last: {...this.last}})
-                        this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last} })
-                    } else {
-                        console.log('outbounce down');
-                        this.trades.push({type: 'BUY', price: this.price, last: {...this.last} });
-                        this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last} })
-                    }
+            if (this.last.trend == 'up') {
+                this.last = {...candle}
+                this.last.trend = this.keep? 'up': 'down'
+                this.cooks.push(this.last);
+                if(this.last.trend == 'up'){
+                    console.log('outbounce up');
+                    this.trades.push({type: 'SELL', price: this.price, last: {...this.last}})
+                    this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last}, id: 21 })
                 } else {
-                    this.last = {...candle}
-                    this.last.trend = this.keep? 'down': 'up'
-                    this.cooks.push(this.last);
-                    if(this.last.trend == 'down'){
-                        console.log('outbounce down');
-                        this.trades.push({type: 'BUY', price: this.price, last: {...this.last} });
-                        this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last} })
-                    } else {
-                        console.log('outbounce up');
-                        this.trades.push({type: 'SELL', price: this.price, last: {...this.last} });
-                        this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last} })
-
-                    }
+                    console.log('outbounce down');
+                    this.trades.push({type: 'BUY', price: this.price, last: {...this.last} });
+                    this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last}, id: 22 })
                 }
-                this.keep = false
             } else {
                 this.last = {...candle}
-                this.last.trend = 'up';
-                this.cooks.push(this.last)
+                this.last.trend = this.keep? 'down': 'up'
+                this.cooks.push(this.last);
+                if(this.last.trend == 'down'){
+                    console.log('outbounce down');
+                    this.trades.push({type: 'BUY', price: this.price, last: {...this.last} });
+                    this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last}, id: 23 })
+                } else {
+                    console.log('outbounce up');
+                    this.trades.push({type: 'SELL', price: this.price, last: {...this.last} });
+                    this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last}, id: 24 })
+
+                }
             }
+            this.keep = false
         }
     
         if (this.last.high < candle.high && this.last.low < candle.low) {
@@ -118,7 +112,7 @@ class Trend {
             this.last.trend = 'up';
             this.cooks.push(this.last)
             this.trades.push({type: 'SELL', price: this.price, last: {...this.last} });
-            this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last}})
+            this.worker.postMessage({type: 'SELL', price: this.price, last: {...this.last}, id: 30})
             console.log('trend up')
             this.keep = false
         }
@@ -128,7 +122,7 @@ class Trend {
             this.last.trend = 'down';
             this.cooks.push(this.last);
             this.trades.push({type: 'BUY', price: this.price, last: {...this.last}})
-            this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last}})
+            this.worker.postMessage({type: 'BUY', price: this.price, last: {...this.last}, id: 31})
             console.log('trend down')
             this.keep = false
         }
@@ -152,7 +146,7 @@ class Trend {
                 }
                 if(seconds === 58){
                     console.log('cancel time')
-                    this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}})
+                    this.worker.postMessage({ type: 'CANCEL', price: this.price, last: {...this.last}, id: 0})
                 }
             }
         }, 1000);

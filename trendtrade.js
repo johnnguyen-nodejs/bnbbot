@@ -16,7 +16,8 @@ class Buy {
         this.quote = quote
         this.aLimit = aLimit
         this.qLimit = qLimit
-        this.db = new Level('db3', {valueEncoding: 'json'})
+        this.id = 0
+        this.db = new Level('db4', {valueEncoding: 'json'})
         this.oNew = new Map()
         this.last = {
             high: 0,
@@ -107,15 +108,34 @@ class Buy {
                     this.oNew.delete(msg.orderId)
                     console.log('filled: ', msg.orderId)
                     this.db.put(msg.eventTime, {
+                        usdA: this.usdA,
+                        usdB: this.usdB,
+                        btcA: this.btcA,
+                        btcB: this.btcB,
+                        id: this.id,
                         time: new Date(msg.eventTime),
                         symbol: msg.symbol,
                         side: msg.side,
                         price: msg.price,
-                        amount: msg.quantity
+                        amount: msg.quantity,
+                        stt: 'filled'
                     })
                     
                 }
                 if(msg.orderStatus == 'CANCELED'){
+                    this.db.put(msg.eventTime, {
+                        usdA: this.usdA,
+                        usdB: this.usdB,
+                        btcA: this.btcA,
+                        btcB: this.btcB,
+                        id: this.id,
+                        time: new Date(msg.eventTime),
+                        symbol: msg.symbol,
+                        side: msg.side,
+                        price: msg.price,
+                        amount: msg.quantity,
+                        stt: 'cancel'
+                    })
                     this.oNew.delete(msg.orderId)
                     console.log('cancel success')
                 }
@@ -125,9 +145,10 @@ class Buy {
 
     run(){
         parentPort.on('message', async (message) => {
-            const { type, price, last} = message
+            const { type, price, last, id} = message
             if(type == 'BUY') {
                 this.last = {...last}
+                this.id = id
                 console.log(this.usdA, this.btcA, this.usdB, this.btcB)
                 if(this.usdA > 6){
                     this.order((this.usdA/last.high).fix(this.aLimit), (last.high - 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), type)
@@ -136,6 +157,7 @@ class Buy {
             }
             if(type == 'SELL'){
                 this.last = {...last}
+                this.id = id
                 console.log(this.usdA, this.btcA, this.usdB, this.btcB)
                 if((this.btcA - this.btcB)*this.price > 6){
                     this.order(((this.btcA - this.btcB)*2).fix(this.aLimit), (last.low + 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), type)
