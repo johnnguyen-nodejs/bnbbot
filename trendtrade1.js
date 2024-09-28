@@ -3,7 +3,7 @@ dotenv.config()
 import "./prototype.js"
 import Binance from 'binance-api-node'
 import { parentPort } from 'worker_threads'
-import { db1, db2 } from './db.js'
+import { db1, db2, db3 } from './db.js'
 
 const client = Binance.default({
     apiKey: process.env.BINANCE_API_KEYN,
@@ -11,20 +11,29 @@ const client = Binance.default({
 })
 
 class Buy {
-    constructor(asset, quote, aLimit, qLimit) {
+    constructor(asset, quote, aLimit, qLimit, cap) {
         this.asset = asset
         this.quote = quote
         this.aLimit = aLimit
         this.qLimit = qLimit
         this.id = 0
+        this.cap = cap
+        this.capU = 0
+        this.capB = 0
+        this.capV = 0
         this.db = db1
         this.faileDb = db2
+        this.candles = db3
         this.oNew = new Map()
+        this.older = []
+        this.k = 0
         this.last = {
             high: 0,
             low: 0,
             trend: 'down'
         }
+        this.e = 0
+        this.e1 = 0
         this.price = 0
         this.btcA = 0
         this.btcL = 0
@@ -45,10 +54,36 @@ class Buy {
                 price,
                 stopPrice
             })
+            if(order) this.e = 0
             return order;
         } catch (error) {
             console.log(side, error.message)
-            this.order(quantity, price, stopPrice,side)
+            this.e++
+            if(this.e < 15){
+                this.order(quantity, price, stopPrice,side)
+            }
+        }
+    }
+
+    async order2(quantity, price, side) {
+        try {
+            const order = await client.marginOrder({
+                symbol: this.asset + this.quote,
+                side,
+                type: 'LIMIT_MAKER',
+                quantity,
+                price
+            })
+            if(order){
+                this.e1 = 0
+            }
+            return order;
+        } catch (error) {
+            console.log(side, error.message)
+            this.e1++
+            if(this.e1 < 15){
+                this.order2(quantity, this.price.toFixed(this.qLimit),side)
+            }
         }
     }
     async cancel(orderId) {
@@ -59,6 +94,19 @@ class Buy {
             })
         } catch (error) {
             console.log('-')
+        }
+    }
+
+    cancelAll0(){
+        for(let id of this.oNew.keys()){
+            this.cancel(id)
+        }
+    }
+
+
+    cancelAll1(){
+        for(let id of this.older){
+            this.cancel(id)
         }
     }
 
@@ -111,34 +159,47 @@ class Buy {
                 }
                 if(msg.orderStatus == 'FILLED') {
                     this.oNew.delete(msg.orderId)
+                    this.k++
                     console.log('filled: ', msg.orderId)
                     this.db.put(msg.eventTime, {
                         usdA: this.usdA,
                         usdB: this.usdB,
                         btcA: this.btcA,
                         btcB: this.btcB,
+                        cap: this.cap,
+                        capU: this.capU,
+                        capB: this.capB,
                         id: this.id,
-                        time: new Date(msg.eventTime),
+                        time: msg.eventTime,
                         symbol: msg.symbol,
                         side: msg.side,
-                        price: msg.price,
-                        amount: msg.quantity,
+                        price: Number(msg.price),
+                        amount: Number(msg.quantity),
                         stt: 'filled'
                     })
                     
                 }
                 if(msg.orderStatus == 'CANCELED'){
+                    if(Number(msg.totalTradeQuantity) > 0){
+                        this.k++
+                        // if((Number(msg.quantity) -Number(msg.totalTradeQuantity))*this.price > 6){
+                        //     this.order2((Number(msg.quantity) -Number(msg.totalTradeQuantity)).fix(this.aLimit), this.price.toFixed(this.qLimit), msg.side)
+                        // }
+                    }
                     this.db.put(msg.eventTime, {
                         usdA: this.usdA,
                         usdB: this.usdB,
                         btcA: this.btcA,
                         btcB: this.btcB,
+                        cap: this.cap,
+                        capU: this.capU,
+                        capB: this.capB,
                         id: this.id,
-                        time: new Date(msg.eventTime),
+                        time: msg.eventTime,
                         symbol: msg.symbol,
                         side: msg.side,
-                        price: msg.price,
-                        amount: msg.quantity,
+                        price: Number(msg.price),
+                        amount: Number(msg.quantity) - Number(msg.totalTradeQuantity),
                         stt: 'cancel'
                     })
                     this.oNew.delete(msg.orderId)
@@ -154,68 +215,85 @@ class Buy {
             if(type == 'BUY') {
                 this.last = {...last}
                 this.id = id
-                this.candles.pus(Date.now(), {...this.last, id: this.id})
-                setTimeout(() => {
-                    console.log(this.usdA, this.btcA, this.usdB, this.btcB)
-                    if(this.usdA > 6){
-                        this.order((this.usdA/last.high).fix(this.aLimit), (last.high - 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), type)
-                    } else {
-                        this.order(((this.btcA - this.btcB)*2).fix(this.aLimit), (last.low + 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), 'SELL')
-                    }
-                    console.log('buy order', this.usdA)
-                }, 300);
+                this.candles.put(Date.now(), {...this.last, id: this.id})
+                this.k = 0
+                if(this.cap*2 < this.usdA){
+                    this.order((this.cap/last.high + this.capV).fix(this.aLimit), (last.high + 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), type)
+                }
+                this.capU = this.cap  - (this.cap/last.high).fix(this.aLimit)*last.high
+                this.capB = (this.cap/last.high).fix(this.aLimit)
+                console.log(this.usdA, this.usdL, this.btcA, this.btcL, this.cap, this.capU, this.capB, this.capV)
+                console.log('buy order', (this.cap/last.high + this.capV).fix(this.aLimit))
             }
             if(type == 'SELL'){
                 this.last = {...last}
                 this.id = id
-                this.candles.pus(Date.now(), {...this.last, id: this.id})
-                setTimeout(() => {
-                    console.log(this.usdA, this.btcA, this.usdB, this.btcB)
-                    if((this.btcA - this.btcB)*this.price > 6){
-                        this.order(((this.btcA - this.btcB)*2).fix(this.aLimit), (last.low + 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), type)
-                    } else {
-                        this.order((this.usdA/last.high).fix(this.aLimit), (last.high - 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), 'BUY')
-                    }
-                    console.log('sell order', this.btcA)
-                }, 300);
+                this.candles.put(Date.now(), {...this.last, id: this.id})
+                this.k = 0
+                if(this.capB == 0){
+                    this.capB = this.cap/this.price
+                }
+                if(this.capB*2 < this.btcA){
+                    this.order((this.capB*2).fix(this.aLimit), (last.low - 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), type)
+                }
+                this.cap = this.capU + this.capB*last.low
+                this.capV = this.capB
+                console.log(this.usdA, this.usdL, this.btcA, this.btcL, this.cap, this.capU, this.capB, this.capV)
+                console.log('sell order', this.capB*2)
             }
             if(type == 'PRICE'){
                 this.price = price
             }
             if(type == 'CANCEL'){
-                for(let id of this.oNew.keys()){
-                    this.cancel(id)
+                if(id == 0){
+                    this.cancelAll0()
+                } else {
+                    this.cancelAll1()
                 }
             }
+            if(type == 'UPDATE'){
+                this.older.length = 0
+                for(let id of this.oNew.keys()){
+                    this.older.push(id)
+                }
+                console.log(this.older)
+            }
+
             if(type == 'REVERSE'){
                 console.log(last, id, this.usdA, this.btcA, this.usdL, this.btcL)
-                if(id == 51 && this.usdA < 6 && this.oNew.size == 0){
+                if(id == 51 && ((this.k == 0 && this.oNew.size == 0)||(this.oNew.size == 1))){
                     console.log('OHHO SELL FAILED')
-                    this.order(((this.btcA - this.btcB)*2).fix(this.aLimit), (last.low + 0.01).toFixed(this.qLimit), (last.low + 0.02).toFixed(this.qLimit), type)
+                    this.cancelAll0()
+                    this.order2((this.capB*2).fix(this.aLimit), this.price.toFixed(this.qLimit), 'SELL')
                     this.faileDb.put(Date.now(), {
                         usdA: this.usdA,
+                        usdL: this.usdL,
                         usdB: this.usdB,
                         btcA: this.btcA,
+                        btcL: this.btcL,
                         btcB: this.btcB,
                         id: this.id,
-                        time: new Date(),
+                        time: Date.now(),
                         symbol: this.asset + this.quote,
                         side: 'SELL',
                         price: Number((last.low + 0.01).toFixed(this.qLimit)),
-                        amount: ((this.btcA - this.btcB)*2).fix(this.aLimit),
+                        amount: (this.btcA*2).fix(this.aLimit),
                         stt: 'failed'
                     })
                 }
-                if(id == 52 && this.usdA > 6){
+                if(id == 52 && ((this.k == 0 && this.oNew.size == 0)||(this.oNew.size == 1))){
                     console.log('OHHO BUY FAILED')
-                    this.order((this.usdA/last.high).fix(this.aLimit), (last.high - 0.01).toFixed(this.qLimit), (last.high).toFixed(this.qLimit), type)
+                    this.cancelAll0()
+                    this.order2((this.cap/last.high + this.capV).fix(this.aLimit), this.price.toFixed(this.qLimit), 'BUY')
                     this.faileDb.put(Date.now(), {
                         usdA: this.usdA,
+                        usdL: this.usdL,
                         usdB: this.usdB,
                         btcA: this.btcA,
+                        btcL: this.btcL,
                         btcB: this.btcB,
                         id: this.id,
-                        time: new Date(),
+                        time: Date.now(),
                         symbol: this.asset + this.quote,
                         side: 'BUY',
                         price: Number((last.high - 0.01).toFixed(this.qLimit)),
@@ -228,7 +306,7 @@ class Buy {
     }
 }
 
-const buy = new Buy('BTC','FDUSD',5,2)
+const buy = new Buy('BTC','FDUSD',5,2, 15)
 
 buy.run()
 

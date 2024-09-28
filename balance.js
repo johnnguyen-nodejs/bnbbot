@@ -14,7 +14,7 @@ const client = Binance.default({
     apiSecret: process.env.BINANCE_API_SECRETN
 })
 console.log(await client.ping())
-const symbol = process.env.SYMBOL || 'BTCFDUSD'
+const symbol = 'SOLFDUSD'
 let btcAmount = 0
 let usdAmount = 0
 let btcLocked = 0
@@ -27,9 +27,9 @@ const getBalance = async () => {
         const accountInfo = await client.marginAccountInfo();
         usdAmount = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').free);
         usdLocked = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'FDUSD').locked)
-        btcAmount = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').free)
-        btcLocked = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').locked)
-        btcBorrowed = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'BTC').borrowed)
+        btcAmount = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'SOL').free)
+        btcLocked = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'SOL').locked)
+        btcBorrowed = parseFloat(accountInfo.userAssets.find(asset => asset.asset === 'SOL').borrowed)
         return
     } catch (error) {
         throw new Error(error)

@@ -19,6 +19,7 @@
     "grammy": "^1.29.0",
     "ioredis": "^5.4.1",
     "level": "^8.0.1",
+    "level-party": "^5.1.1",
     "node-cron": "^3.0.3",
     "technicalindicators": "^3.1.0"
   }
